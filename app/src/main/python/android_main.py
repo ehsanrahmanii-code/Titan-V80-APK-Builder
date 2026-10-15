@@ -68,6 +68,9 @@ def start_server(app_files_dir: str | None = None) -> None:
         os.environ["TITAN_LIVE_TRADING"] = "0"
         os.environ.pop("TITAN_LIVE_UNLOCK", None)
 
+        # Force Chaquopy to extract the legacy layer tree as real .py files.
+        import app.titan  # noqa: F401
+
         from titan.runtime import load
 
         ns = load(__file__, as_main=False, stop_before="entry/main_entry")
