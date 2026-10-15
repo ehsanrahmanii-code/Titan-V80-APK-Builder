@@ -35,6 +35,7 @@ jobs:
           # The upstream runtime resolves layer files relative to Chaquopy's
           # AssetFinder/app root. Keep both importable and legacy asset paths.
           mkdir -p app/src/main/python/app
+          touch app/src/main/python/app/__init__.py
           rm -rf app/src/main/python/app/titan
           cp -a app/src/main/python/titan app/src/main/python/app/titan
           test -f app/src/main/python/app/titan/layers/core/bootstrap_storage.py
