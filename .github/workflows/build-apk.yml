@@ -1,13 +1,16 @@
-name: Build Titan V80 APK
+name: Build TAI Android APK (TITAN PRO V80)
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    name: Build Android APK (Chaquopy)
+    name: Build self-contained TAI APK
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     env:
@@ -15,13 +18,24 @@ jobs:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-      - name: Verify titan sources
+      - name: Restore complete TITAN PRO V80 engine
+        shell: bash
         run: |
-          test -f app/src/main/python/android_main.py
+          set -euo pipefail
+          BUNDLE="app/src/main/python/titan-v80-bundle.tar.xz.b64"
+          test -s "$BUNDLE"
+          base64 --decode "$BUNDLE" > /tmp/titan-v80.tar.xz
+          tar -xJf /tmp/titan-v80.tar.xz -C app/src/main/python
+          rm -f "$BUNDLE" /tmp/titan-v80.tar.xz
           test -f app/src/main/python/titan/runtime.py
-          find app/src/main/python/titan -name "*.py" | wc -l
+          test -f app/src/main/python/titan/layers/core/bootstrap_storage.py
+          test -f app/src/main/python/titan/layers/web/flask_app.py
+          grep -q 'TITAN_FOLDER_NAME = "JJJ"' app/src/main/python/titan/layers/core/bootstrap_storage.py
+          python3 -m compileall -q app/src/main/python/titan
+          echo "Loaded $(find app/src/main/python/titan -name '*.py' | wc -l) TITAN Python modules."
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -29,14 +43,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Python
+      - name: Set up Python for build checks
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Android commandline tools + SDK
+      - name: Install Android SDK
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p "$ANDROID_HOME/cmdline-tools"
           cd /tmp
           curl -fsSL -o cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
@@ -47,50 +62,67 @@ jobs:
           sdkmanager --sdk_root="$ANDROID_HOME" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
           echo "sdk.dir=$ANDROID_HOME" > "$GITHUB_WORKSPACE/local.properties"
 
-      - name: Create default launcher icon
+      - name: Create TAI launcher icon
+        shell: bash
         run: |
           mkdir -p app/src/main/res/mipmap-hdpi
           python3 - <<'PY'
-from pathlib import Path
-try:
-    from PIL import Image, ImageDraw
-    img = Image.new("RGBA", (192, 192), (2, 6, 23, 255))
-    d = ImageDraw.Draw(img)
-    d.ellipse((30, 30, 162, 162), fill=(14, 165, 233, 255))
-    d.ellipse((60, 60, 132, 132), fill=(2, 6, 23, 255))
-    img.save("app/src/main/res/mipmap-hdpi/ic_launcher.png")
-    print("icon ok")
-except Exception as e:
-    # minimal 1x1 fallback
-    Path("app/src/main/res/mipmap-hdpi/ic_launcher.png").write_bytes(
-        bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082")
-    )
-    print("fallback icon", e)
-PY
+          from pathlib import Path
+          try:
+              from PIL import Image, ImageDraw
+              img = Image.new("RGBA", (192, 192), (2, 6, 23, 255))
+              d = ImageDraw.Draw(img)
+              d.ellipse((22, 22, 170, 170), fill=(14, 165, 233, 255))
+              d.ellipse((48, 48, 144, 144), fill=(2, 6, 23, 255))
+              d.line((58, 120, 84, 92, 102, 108, 139, 65), fill=(45, 212, 191, 255), width=9)
+              img.save("app/src/main/res/mipmap-hdpi/ic_launcher.png")
+          except Exception:
+              Path("app/src/main/res/mipmap-hdpi/ic_launcher.png").write_bytes(bytes.fromhex(
+                  "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+                  "0000000a49444154789c63000100000500010d0a2db40000000049454e44ae426082"
+              ))
+          PY
 
-      - name: Setup Gradle wrapper
+      - name: Set up Gradle wrapper
+        shell: bash
         run: |
+          set -euo pipefail
           curl -fsSL -o /tmp/gradle-8.7-bin.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
           sudo unzip -qo /tmp/gradle-8.7-bin.zip -d /opt
           /opt/gradle-8.7/bin/gradle wrapper --gradle-version 8.7
           chmod +x gradlew
 
-      - name: Gradle assembleDebug
+      - name: Build APK with all native Python dependencies bundled
+        shell: bash
         run: |
+          set -euo pipefail
           export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          ./gradlew --no-daemon --stacktrace assembleDebug
 
-      - name: Locate APK
-        if: always()
+      - name: Verify and name APK
+        shell: bash
         run: |
-          find app/build/outputs -name "*.apk" -ls || true
-          ls -lah app/build/outputs/apk/debug/ || true
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk TAI.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --verbose TAI.apk
+          APK_BYTES="$(stat -c '%s' TAI.apk)"
+          echo "TAI.apk size: $APK_BYTES bytes"
+          echo "APK_SIZE_BYTES=$APK_BYTES" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$APK_BYTES" -lt 41943040 ]; then
+            echo "::error::TAI.apk is under the requested 40 MiB size threshold."
+            exit 1
+          fi
+          sha256sum TAI.apk > TAI.apk.sha256
+          echo "Build succeeded. Python runtime, NumPy, pandas, Flask, requests, websocket-client and their dependencies are bundled inside the APK." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload APK
+      - name: Upload installable APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Titan-V80-Full-APK
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
-          retention-days: 14
+          name: TAI-Android-APK
+          path: |
+            TAI.apk
+            TAI.apk.sha256
+          if-no-files-found: error
+          retention-days: 30

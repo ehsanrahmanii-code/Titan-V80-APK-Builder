@@ -21,38 +21,19 @@ android {
         python {
             version "3.11"
             pip {
-                install "numpy"
-                install "pandas"
-                install "flask"
-                install "requests"
-                install "urllib3"
-                install "websocket-client"
-                install "jinja2"
-                install "werkzeug"
-                install "markupsafe"
-                install "itsdangerous"
-                install "click"
-                install "blinker"
-                install "certifi"
-                install "charset-normalizer"
-                install "idna"
-                install "six"
-                install "pytz"
-                install "python-dateutil"
-                install "tzdata"
-                install "pillow"
-                install "waitress"
+                install "numpy>=1.24,<2.1"
+                install "pandas>=2.0,<2.3"
+                install "requests>=2.31,<3"
+                install "flask>=3.0,<3.2"
+                install "waitress>=3.0,<4"
+                install "websocket-client>=1.6,<2"
             }
         }
     }
 
     buildTypes {
-        release {
-            minifyEnabled false
-        }
-        debug {
-            minifyEnabled false
-        }
+        release { minifyEnabled false }
+        debug { minifyEnabled false }
     }
 
     compileOptions {
