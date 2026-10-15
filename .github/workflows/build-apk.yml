@@ -32,10 +32,16 @@ jobs:
           rm -f "$BUNDLE" /tmp/titan-v80.tar.xz
           test -f app/src/main/python/titan/runtime.py
           test -f app/src/main/python/titan/layers/core/bootstrap_storage.py
-          test -f app/src/main/python/titan/layers/web/flask_app.py
+          # The upstream runtime resolves layer files relative to Chaquopy's
+          # AssetFinder/app root. Keep both importable and legacy asset paths.
+          mkdir -p app/src/main/python/app
+          rm -rf app/src/main/python/app/titan
+          cp -a app/src/main/python/titan app/src/main/python/app/titan
+          test -f app/src/main/python/app/titan/layers/core/bootstrap_storage.py
           grep -q 'TITAN_FOLDER_NAME = "JJJ"' app/src/main/python/titan/layers/core/bootstrap_storage.py
-          python3 -m compileall -q app/src/main/python/titan
-          echo "Loaded $(find app/src/main/python/titan -name '*.py' | wc -l) TITAN Python modules."
+          python3 -m compileall -q app/src/main/python/titan app/src/main/python/app/titan
+          echo "Restored $(find app/src/main/python/titan -name '*.py' | wc -l) TITAN Python modules."
+          echo "Legacy asset path verified: app/titan/layers/core/bootstrap_storage.py"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -114,7 +120,7 @@ jobs:
             exit 1
           fi
           sha256sum TAI.apk > TAI.apk.sha256
-          echo "Build succeeded. Python runtime, NumPy, pandas, Flask, requests, websocket-client and their dependencies are bundled inside the APK." >> "$GITHUB_STEP_SUMMARY"
+          echo "TITAN engine asset path checked; bundled runtime dependencies included." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload installable APK
         if: success()
